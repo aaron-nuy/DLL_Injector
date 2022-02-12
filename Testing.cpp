@@ -8,7 +8,7 @@
 #include <stdlib.h>
 
 
-DWORD Win32ReturnProcessID(const wchar_t* pProcessName) {
+DWORD Win32ReturnProcessID(const std::wstring& pProcessName) {
 	HANDLE hToolHelper = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0x0);
 	PROCESSENTRY32 p32ProcessEntry = { 0 };
 	p32ProcessEntry.dwSize = sizeof(PROCESSENTRY32);
@@ -23,7 +23,7 @@ DWORD Win32ReturnProcessID(const wchar_t* pProcessName) {
 	}
 
 	do {
-		if (!wcscmp(p32ProcessEntry.szExeFile, pProcessName)) {
+		if (!wcscmp(p32ProcessEntry.szExeFile, pProcessName.c_str())) {
 			CloseHandle(hToolHelper);
 			std::wcout << p32ProcessEntry.szExeFile << ": " << p32ProcessEntry.th32ProcessID << std::endl;
 			return p32ProcessEntry.th32ProcessID;
@@ -37,9 +37,18 @@ DWORD Win32ReturnProcessID(const wchar_t* pProcessName) {
 
 
 
-BOOL Win32InjectDLLToProcess(DWORD pID, const std::string& myDllPath) {
+BOOL Win32InjectDLLToProcess(DWORD pID, const std::wstring& myDllPath) {
 
-	size_t pathLength = myDllPath.length() + 1;
+
+	DWORD fullPathLength;
+	DWORD fullPathBufferSize;
+	TCHAR fullPathBuffer[MAX_PATH] = { 0 };
+	fullPathLength = GetFullPathNameW(myDllPath.c_str(), MAX_PATH, fullPathBuffer, NULL) + 1;
+	fullPathBufferSize = fullPathLength * sizeof(TCHAR);
+
+
+
+
 
 	HANDLE hProcessHandle = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pID);
 	if (hProcessHandle == NULL) {
@@ -53,7 +62,7 @@ BOOL Win32InjectDLLToProcess(DWORD pID, const std::string& myDllPath) {
 	}
 
 
-	LPVOID lpLoadLib = reinterpret_cast<LPVOID>(GetProcAddress(hKernelHandle, "LoadLibraryA"));
+	LPVOID lpLoadLib = reinterpret_cast<LPVOID>(GetProcAddress(hKernelHandle, "LoadLibraryW"));
 	if (lpLoadLib == NULL) {
 		CloseHandle(hProcessHandle);
 		CloseHandle(hKernelHandle);
@@ -61,7 +70,7 @@ BOOL Win32InjectDLLToProcess(DWORD pID, const std::string& myDllPath) {
 	}
 				
 
-	LPVOID lpLoadLocation = VirtualAllocEx(hProcessHandle, NULL, pathLength,
+	LPVOID lpLoadLocation = VirtualAllocEx(hProcessHandle, NULL, fullPathBufferSize,
 					MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 	if (lpLoadLocation == NULL) {
 		CloseHandle(hProcessHandle);
@@ -70,11 +79,11 @@ BOOL Win32InjectDLLToProcess(DWORD pID, const std::string& myDllPath) {
 	}
 
 
-	if (!WriteProcessMemory(hProcessHandle, lpLoadLocation, myDllPath.c_str(),
-		pathLength, NULL)) {
+	if (!WriteProcessMemory(hProcessHandle, lpLoadLocation, fullPathBuffer,
+		fullPathBufferSize, NULL)) {
 		CloseHandle(hProcessHandle);
 		CloseHandle(hKernelHandle);
-		throw std::exception("Could not write memory\n");
+		throw std::exception("Could not write memory\n");  
 	}
 
 
@@ -101,12 +110,20 @@ BOOL Win32InjectDLLToProcess(DWORD pID, const std::string& myDllPath) {
 
 int main()
 {
+	std::wstring myDll;
+	std::cout << "Dll Name: ";
+	std::wcin >> myDll;
+	std::cout << std::endl;
 
-	std::string myDll("C:\\Users\\HP\\Desktop\\Networking\\Testing\\x64\\Debug\\InjectionDLL.dll");
+
+	std::wstring processName;
+	std::cout << "Target Process: ";
+	std::wcin >> processName;
+	std::cout << std::endl;
 
 	try {
-		DWORD PID = Win32ReturnProcessID(L"chrome.exe");
-		Win32InjectDLLToProcess(PID, myDll );
+		DWORD PID = Win32ReturnProcessID(processName);
+		if(Win32InjectDLLToProcess(PID, myDll )) std::cout << "Injected Successfully" << std::endl;
 	}
 	catch (std::exception& e) {
 		std::cerr << e.what();
